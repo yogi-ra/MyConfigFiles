@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_menu>
+
+  <menu id="root-menu" label="Labwc">
+    <item label="Terminal">
+      <action name="Execute" command="kitty"/>
+    </item>
+    <item label="Web Browser">
+      <action name="Execute" command="zen"/>
+    </item>
+    <!-- <item label="Screenshot"> -->
+    <!--   <action name="Execute" command="xfce4-screenshooter -r - -clipboard -o nomacs"/> -->
+    <!-- </item> -->
+    <item label="Reconfigure">
+      <action name="Reconfigure"/>
+    </item>
+    <item label="Exit">
+      <action name="Exit"/>
+    </item>
+    <item label="Reboot">
+      <action name="Execute" command="sudo /sbin/reboot"/>
+    </item>
+    <item label="Poweroff">
+      <action name="Execute" command="sudo /sbin/poweroff"/>
+    </item>
+  </menu>
+
+  <menu id="client-menu" label="Window">
+    <item label="Always on Top">
+      <action name="ToggleAlwaysOnTop"/>
+    </item>
+    <item label="Minimize">
+      <action name="Iconify"/>
+    </item>
+    <item label="Maximize">
+      <action name="ToggleMaximize"/>
+    </item>
+    <item label="Move">
+      <action name="Move"/>
+    </item>
+    <item label="Resize">
+      <action name="Resize"/>
+    </item>
+    <item label="Close">
+      <action name="Close"/>
+    </item>
+  </menu>
+</openbox_menu>

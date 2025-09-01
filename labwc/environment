@@ -1,0 +1,37 @@
+# Set keyboard layout to Swedish
+# XKB_DEFAULT_LAYOUT=se
+
+# Set two keyboard layouts and toggle between them using alt+shift
+# XKB_DEFAULT_LAYOUT=se,de
+# XKB_DEFAULT_OPTIONS=grp:alt_shift_toggle
+
+# Force firefox to use wayland backend
+MOZ_ENABLE_WAYLAND=1
+
+# Set cursor theme.
+# Find icons themes with the command below or similar:
+#     find /usr/share/icons/ -type d -name "cursors"
+
+# Wayland configurations
+# GDK_BACKEND=x11
+QT_QPA_PLATFORM=xcb
+XDG_SESSION_TYPE=wayland
+# XDG_CURRENT_DESKTOP=labwc:wlroots
+XDG_CURRENT_DESKTOP=wlroots
+
+# Fcitx input method configuration for xwayland
+GTK_IM_MODULE=fcitx
+QT_IM_MODULE=fcitx
+SDL_IM_MODULE=fcitx
+XMODIFIERS=@im=fcitx
+INPUT_METHOD=fcitx
+
+# Gnome GTK ecosystem's input/output library for wasistlos
+GIO_MODULE_DIR=/usr/lib/x86_64-linux-gnu/gio/modules
+GIO_USE_TLS=gnutls
+
+# MPD (Music Player Daemon) configuration
+MPDCONF=/etc/mpd.conf
+# XCURSOR_THEME=breeze-dark
+XCURSOR_THEME=breeze_cursors
+XCURSOR_SIZE=16

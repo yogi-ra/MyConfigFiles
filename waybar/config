@@ -76,7 +76,7 @@
         "on-click": "~/.config/rofi/applets/bin/mpd.sh"
     },
     "idle_inhibitor": {
-        "format": "{icon}",
+        "format": "{icon} ",
         "format-icons": {
             "activated": "",
             "deactivated": ""

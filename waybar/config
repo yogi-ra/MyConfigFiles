@@ -6,7 +6,7 @@
     "spacing": 4, // Gaps between modules (4px)
     // Choose the order of the modules
     // "modules-left": ["ext/workspaces", "custom/media"],
-    "modules-left": ["ext/workspaces", "wlr/taskbar"],
+    "modules-left": ["custom/appmenu", "ext/workspaces", "wlr/taskbar"],
     "modules-center": [],
     "modules-right": ["mpd", "idle_inhibitor", "pulseaudio", "backlight", "battery", "battery#bat2", "clock", "tray"],
     // "modules-right": ["mpd", "idle_inhibitor", "pulseaudio", "network", "backlight", "keyboard-state", "battery", "battery#bat2", "clock", "tray"],
@@ -187,5 +187,10 @@
         "exec": "$HOME/.config/waybar/mediaplayer.py 2> /dev/null" // Script in resources folder
         // "exec": "$HOME/.config/waybar/mediaplayer.py --player spotify 2> /dev/null" // Filter player based on name
     },
+
+    "custom/appmenu": {
+        "format": "",
+        "on-click": "jgmenu_run"
+    }
 }
 

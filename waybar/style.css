@@ -38,6 +38,7 @@
 }
 
 #custom-music,
+#custom-appmenu,
 #tray,
 #backlight,
 #clock,
@@ -124,6 +125,11 @@
 #tray {
   margin-right: 1rem;
   border-radius: 1rem;
+}
+
+#custom-appmenu {
+  margin-left: 1rem;
+  background-color: transparent;
 }
 
 tooltip {

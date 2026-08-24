@@ -1,0 +1,561 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LABWC_ENV="${HOME}/.config/labwc/environment"
+XRESOURCES="${HOME}/.Xresources"
+
+GTK3_SETTINGS="${HOME}/.config/gtk-3.0/settings.ini"
+GTK4_SETTINGS="${HOME}/.config/gtk-4.0/settings.ini"
+
+DEFAULT_THEME="/usr/share/icons/default/index.theme"
+ETC_X11_CURSORS="/etc/X11/cursors"
+
+CURSOR_PATH="${HOME}/.local/share/icons:${HOME}/.icons:/usr/share/icons:/usr/share/icons/default"
+
+
+usage() {
+    cat <<EOF
+Usage:
+  ${0} list
+  ${0} set THEME [SIZE]
+  ${0} current
+  ${0} run COMMAND [ARGS...]
+
+Commands:
+  list
+      List installed cursor themes.
+
+  set THEME [SIZE]
+      Set the global cursor theme and size.
+
+  current
+      Show the current cursor configuration.
+
+  run COMMAND [ARGS...]
+      Run any application with the configured cursor environment.
+
+Examples:
+  ${0} list
+  ${0} set breeze-dark 32
+  ${0} set breeze_cursors 24
+  ${0} set kobo_cursor_v1 24
+  ${0} current
+
+  ${0} run jgmenu_run
+  ${0} run firefox
+  ${0} run kitty
+EOF
+}
+
+
+# ---------------------------------------------------------------------------
+# Cursor theme discovery
+# ---------------------------------------------------------------------------
+
+cursor_dirs() {
+    printf '%s\n' \
+        "${HOME}/.icons" \
+        "${HOME}/.local/share/icons" \
+        "/usr/share/icons"
+}
+
+
+is_cursor_theme() {
+    local dir="$1"
+
+    # A real Xcursor theme must have a cursors directory.
+    [[ -d "$dir/cursors" ]] || return 1
+
+    # Require at least one cursor file or symlink.
+    find "$dir/cursors" \
+        -maxdepth 1 \
+        \( -type f -o -type l \) \
+        -print -quit 2>/dev/null |
+        grep -q .
+}
+
+
+list_cursors() {
+    local base
+    local theme_dir
+    local theme
+
+    while read -r base; do
+        [[ -d "$base" ]] || continue
+
+        for theme_dir in "$base"/*; do
+            [[ -d "$theme_dir" ]] || continue
+
+            if is_cursor_theme "$theme_dir"; then
+                theme="$(basename "$theme_dir")"
+                printf '%s\n' "$theme"
+            fi
+        done
+    done < <(cursor_dirs) |
+        sort -u
+}
+
+
+theme_exists() {
+    local theme="$1"
+    local base
+
+    while read -r base; do
+        if [[ -d "$base/$theme/cursors" ]] &&
+           is_cursor_theme "$base/$theme"; then
+            return 0
+        fi
+    done < <(cursor_dirs)
+
+    return 1
+}
+
+
+theme_locations() {
+    local theme="$1"
+    local base
+
+    while read -r base; do
+        if [[ -d "$base/$theme/cursors" ]]; then
+            printf '%s\n' "$base/$theme"
+        fi
+    done < <(cursor_dirs)
+}
+
+
+# ---------------------------------------------------------------------------
+# Theme files / X11 fallback
+# ---------------------------------------------------------------------------
+
+find_theme_file() {
+    local theme="$1"
+
+    if [[ -f "$ETC_X11_CURSORS/$theme.theme" ]]; then
+        printf '%s\n' "$ETC_X11_CURSORS/$theme.theme"
+
+    elif [[ -f "/usr/share/icons/$theme/cursor.theme" ]]; then
+        printf '%s\n' "/usr/share/icons/$theme/cursor.theme"
+
+    elif [[ -f "/usr/share/icons/$theme/index.theme" ]]; then
+        printf '%s\n' "/usr/share/icons/$theme/index.theme"
+
+    elif [[ -f "${HOME}/.local/share/icons/$theme/cursor.theme" ]]; then
+        printf '%s\n' "${HOME}/.local/share/icons/$theme/cursor.theme"
+
+    elif [[ -f "${HOME}/.local/share/icons/$theme/index.theme" ]]; then
+        printf '%s\n' "${HOME}/.local/share/icons/$theme/index.theme"
+
+    elif [[ -f "${HOME}/.icons/$theme/cursor.theme" ]]; then
+        printf '%s\n' "${HOME}/.icons/$theme/cursor.theme"
+
+    elif [[ -f "${HOME}/.icons/$theme/index.theme" ]]; then
+        printf '%s\n' "${HOME}/.icons/$theme/index.theme"
+
+    else
+        return 1
+    fi
+}
+
+
+ensure_etc_x11_cursor_symlink() {
+    local theme="$1"
+    local source_file="$2"
+    local target_file="$ETC_X11_CURSORS/$theme.theme"
+
+    if [[ -e "$target_file" ]]; then
+        printf '%s\n' "$target_file"
+        return 0
+    fi
+
+    sudo mkdir -p "$ETC_X11_CURSORS"
+    sudo ln -s "$source_file" "$target_file"
+
+    printf '%s\n' "$target_file"
+}
+
+
+set_x11_alternative() {
+    local theme="$1"
+    local source_file
+    local alt_file
+
+    if ! command -v update-alternatives >/dev/null 2>&1; then
+        echo "Skipping X11 fallback: update-alternatives not found."
+        return 0
+    fi
+
+    if ! source_file="$(find_theme_file "$theme")"; then
+        echo "Skipping X11 fallback: no theme file found for '$theme'."
+        return 0
+    fi
+
+    alt_file="$(ensure_etc_x11_cursor_symlink "$theme" "$source_file")"
+
+    sudo update-alternatives --install \
+        "$DEFAULT_THEME" \
+        x-cursor-theme \
+        "$alt_file" \
+        100
+
+    sudo update-alternatives --set \
+        x-cursor-theme \
+        "$alt_file"
+}
+
+
+# ---------------------------------------------------------------------------
+# GNOME / GTK
+# ---------------------------------------------------------------------------
+
+set_gsettings() {
+    local theme="$1"
+    local size="$2"
+
+    if ! command -v gsettings >/dev/null 2>&1; then
+        echo "Skipping GSettings: gsettings not found."
+        return 0
+    fi
+
+    gsettings set \
+        org.gnome.desktop.interface \
+        cursor-theme \
+        "$theme" 2>/dev/null || true
+
+    gsettings set \
+        org.gnome.desktop.interface \
+        cursor-size \
+        "$size" 2>/dev/null || true
+}
+
+
+set_gtk_settings() {
+    local file="$1"
+    local theme="$2"
+    local size="$3"
+
+    mkdir -p "$(dirname "$file")"
+
+    touch "$file"
+
+    # Ensure [Settings] exists.
+    if ! grep -qE '^[[:space:]]*\[Settings\][[:space:]]*$' "$file"; then
+        printf '[Settings]\n' >> "$file"
+    fi
+
+    sed -i \
+        -e '/^[[:space:]]*gtk-cursor-theme-name[[:space:]]*=/d' \
+        -e '/^[[:space:]]*gtk-cursor-theme-size[[:space:]]*=/d' \
+        "$file"
+
+    printf 'gtk-cursor-theme-name=%s\n' "$theme" >> "$file"
+    printf 'gtk-cursor-theme-size=%s\n' "$size" >> "$file"
+}
+
+
+set_gtk() {
+    local theme="$1"
+    local size="$2"
+
+    set_gtk_settings "$GTK3_SETTINGS" "$theme" "$size"
+    set_gtk_settings "$GTK4_SETTINGS" "$theme" "$size"
+}
+
+
+# ---------------------------------------------------------------------------
+# labwc environment
+# ---------------------------------------------------------------------------
+
+set_labwc_env() {
+    local theme="$1"
+    local size="$2"
+
+    mkdir -p "$(dirname "$LABWC_ENV")"
+    touch "$LABWC_ENV"
+
+    sed -i \
+        -e '/^[[:space:]]*XCURSOR_THEME=/d' \
+        -e '/^[[:space:]]*XCURSOR_SIZE=/d' \
+        -e '/^[[:space:]]*XCURSOR_PATH=/d' \
+        "$LABWC_ENV"
+
+    {
+        printf 'XCURSOR_THEME=%s\n' "$theme"
+        printf 'XCURSOR_SIZE=%s\n' "$size"
+        printf 'XCURSOR_PATH=%s\n' "$CURSOR_PATH"
+    } >> "$LABWC_ENV"
+}
+
+
+# ---------------------------------------------------------------------------
+# Xresources
+# ---------------------------------------------------------------------------
+
+set_xresources() {
+    local theme="$1"
+    local size="$2"
+
+    touch "$XRESOURCES"
+
+    sed -i \
+        -e '/^[[:space:]]*Xcursor\.theme[[:space:]]*:/d' \
+        -e '/^[[:space:]]*Xcursor\.size[[:space:]]*:/d' \
+        "$XRESOURCES"
+
+    {
+        printf 'Xcursor.theme: %s\n' "$theme"
+        printf 'Xcursor.size: %s\n' "$size"
+    } >> "$XRESOURCES"
+
+    if command -v xrdb >/dev/null 2>&1; then
+        xrdb -merge "$XRESOURCES" 2>/dev/null || true
+    fi
+}
+
+
+# ---------------------------------------------------------------------------
+# Read configured values
+# ---------------------------------------------------------------------------
+
+read_labwc_value() {
+    local key="$1"
+
+    [[ -f "$LABWC_ENV" ]] || return 0
+
+    sed -n "s/^[[:space:]]*${key}=//p" "$LABWC_ENV" |
+        tail -n 1
+}
+
+
+get_cursor_environment() {
+    local theme
+    local size
+    local path
+
+    theme="$(read_labwc_value XCURSOR_THEME)"
+    size="$(read_labwc_value XCURSOR_SIZE)"
+    path="$(read_labwc_value XCURSOR_PATH)"
+
+    # Fall back to current shell environment where useful.
+    [[ -n "$theme" ]] || theme="${XCURSOR_THEME:-}"
+    [[ -n "$size" ]] || size="${XCURSOR_SIZE:-24}"
+    [[ -n "$path" ]] || path="${XCURSOR_PATH:-$CURSOR_PATH}"
+
+    if [[ -z "$theme" ]]; then
+        echo "Error: no cursor theme configured." >&2
+        echo "Run:" >&2
+        echo "  ${0} set THEME [SIZE]" >&2
+        return 1
+    fi
+
+    export XCURSOR_THEME="$theme"
+    export XCURSOR_SIZE="$size"
+    export XCURSOR_PATH="$path"
+}
+
+
+# ---------------------------------------------------------------------------
+# Generic application launcher
+# ---------------------------------------------------------------------------
+
+run_with_cursor_env() {
+    if [[ $# -eq 0 ]]; then
+        echo "Error: no command specified." >&2
+        echo "Example: ${0} run jgmenu_run" >&2
+        exit 2
+    fi
+
+    get_cursor_environment
+
+    exec "$@"
+}
+
+
+# ---------------------------------------------------------------------------
+# Show current configuration
+# ---------------------------------------------------------------------------
+
+show_current() {
+    echo "Configured cursor:"
+    printf '  theme: '
+    read_labwc_value XCURSOR_THEME || true
+
+    printf '  size:  '
+    read_labwc_value XCURSOR_SIZE || true
+
+    printf '  path:  '
+    read_labwc_value XCURSOR_PATH || true
+
+    echo
+    echo "Current process environment:"
+    printf '  XCURSOR_THEME=%s\n' "${XCURSOR_THEME:-<not set>}"
+    printf '  XCURSOR_SIZE=%s\n' "${XCURSOR_SIZE:-<not set>}"
+    printf '  XCURSOR_PATH=%s\n' "${XCURSOR_PATH:-<not set>}"
+
+    echo
+    echo "labwc:"
+    if [[ -f "$LABWC_ENV" ]]; then
+        grep -E \
+            '^[[:space:]]*XCURSOR_(THEME|SIZE|PATH)=' \
+            "$LABWC_ENV" ||
+            echo "  not configured"
+    else
+        echo "  $LABWC_ENV does not exist"
+    fi
+
+    echo
+    echo "GTK 3:"
+    if [[ -f "$GTK3_SETTINGS" ]]; then
+        grep -E \
+            '^[[:space:]]*gtk-cursor-theme-(name|size)[[:space:]]*=' \
+            "$GTK3_SETTINGS" ||
+            echo "  not configured"
+    else
+        echo "  not configured"
+    fi
+
+    echo
+    echo "GTK 4:"
+    if [[ -f "$GTK4_SETTINGS" ]]; then
+        grep -E \
+            '^[[:space:]]*gtk-cursor-theme-(name|size)[[:space:]]*=' \
+            "$GTK4_SETTINGS" ||
+            echo "  not configured"
+    else
+        echo "  not configured"
+    fi
+
+    echo
+    echo "GSettings:"
+    if command -v gsettings >/dev/null 2>&1; then
+        printf '  cursor-theme: '
+        gsettings get \
+            org.gnome.desktop.interface \
+            cursor-theme 2>/dev/null || true
+
+        printf '  cursor-size:  '
+        gsettings get \
+            org.gnome.desktop.interface \
+            cursor-size 2>/dev/null || true
+    else
+        echo "  gsettings not found"
+    fi
+
+    echo
+    echo "Xresources:"
+    if command -v xrdb >/dev/null 2>&1; then
+        xrdb -query 2>/dev/null |
+            grep -E '^Xcursor\.(theme|size):' ||
+            echo "  not configured"
+    else
+        echo "  xrdb not found"
+    fi
+
+    echo
+    echo "X11 system fallback:"
+    if command -v update-alternatives >/dev/null 2>&1; then
+        update-alternatives \
+            --query x-cursor-theme 2>/dev/null |
+            grep '^Value:' ||
+            echo "  not configured"
+    else
+        echo "  update-alternatives not found"
+    fi
+
+    echo
+    echo "Available theme directories:"
+    cursor_dirs | sed 's/^/  /'
+}
+
+
+# ---------------------------------------------------------------------------
+# Set cursor
+# ---------------------------------------------------------------------------
+
+set_cursor() {
+    local theme="${1:-}"
+    local size="${2:-24}"
+
+    if [[ -z "$theme" ]]; then
+        usage
+        exit 2
+    fi
+
+    if ! [[ "$size" =~ ^[0-9]+$ ]]; then
+        echo "Error: size must be a number." >&2
+        exit 2
+    fi
+
+    if ! theme_exists "$theme"; then
+        echo "Error: cursor theme '$theme' was not found." >&2
+        echo
+        echo "Searched:"
+        cursor_dirs | sed 's/^/  /'
+        echo
+        echo "Available themes:"
+        list_cursors | sed 's/^/  /'
+        exit 1
+    fi
+
+    set_gsettings "$theme" "$size"
+    set_labwc_env "$theme" "$size"
+    set_gtk "$theme" "$size"
+    set_xresources "$theme" "$size"
+    set_x11_alternative "$theme"
+
+    echo
+    echo "Cursor theme set:"
+    echo "  theme: $theme"
+    echo "  size:  $size"
+    echo "  path:  $CURSOR_PATH"
+    echo
+    echo "Location(s):"
+
+    theme_locations "$theme" |
+        sed 's/^/  /'
+
+    echo
+    echo "Configuration updated."
+    echo
+    echo "New applications can be launched with:"
+    echo "  ${0} run COMMAND [ARGS...]"
+    echo
+    echo "Already-running applications may need to be restarted."
+}
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+case "${1:-}" in
+
+    list)
+        list_cursors
+        ;;
+
+    set)
+        shift
+        set_cursor "${1:-}" "${2:-24}"
+        ;;
+
+    current)
+        show_current
+        ;;
+
+    run)
+        shift
+        run_with_cursor_env "$@"
+        ;;
+
+    -h|--help|help|"")
+        usage
+        ;;
+
+    *)
+        echo "Unknown command: $1" >&2
+        echo
+        usage
+        exit 2
+        ;;
+
+esac

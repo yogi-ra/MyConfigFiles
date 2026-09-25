@@ -1,8 +1,12 @@
 if vim.env.TMUX then
+  local copy_cmd = {
+    'sh', '-c',
+    [[tmux load-buffer -w - 2>/dev/null || printf '\033Ptmux;\033\033]52;c;%s\033\\' "$(base64 | tr -d '\n')"]]
+  }
   vim.g.clipboard = {
     name = 'tmux-osc52',
-    copy  = { ['+'] = { 'tmux', 'load-buffer', '-w', '-' }, ['*'] = { 'tmux', 'load-buffer', '-w', '-' } },
-    paste = { ['+'] = { 'tmux', 'save-buffer', '-' },       ['*'] = { 'tmux', 'save-buffer', '-' } },
+    copy  = { ['+'] = copy_cmd, ['*'] = copy_cmd },
+    paste = { ['+'] = { 'tmux', 'save-buffer', '-' }, ['*'] = { 'tmux', 'save-buffer', '-' } },
     cache_enabled = 0,
   }
 elseif vim.env.DISPLAY then
